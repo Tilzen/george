@@ -9,7 +9,9 @@
 # move said applications out of the umbrella.
 import Config
 
-config :binance, api_key: "", secret_key: ""
+config :binance,
+  api_key: System.get_env("GEORGE_API_KEY"),
+  secret_key: System.get_env("GEORGE_SECRET_KEY")
 
 config :logger, level: :info
 # Sample configuration:
