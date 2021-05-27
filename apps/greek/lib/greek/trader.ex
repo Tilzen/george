@@ -1,5 +1,5 @@
 defmodule Greek.Trader do
-  use GenServer
+  use GenServer, restart: :temporary
 
   require Logger
 
@@ -15,21 +15,12 @@ defmodule Greek.Trader do
     ]
   end
 
-  def start_link(%{} = args) do
-    GenServer.start_link(__MODULE__, args, name: :trader)
+  def start_link(%State{} = state) do
+    GenServer.start_link(__MODULE__, state, name: :trader)
   end
 
-  def init(%{} = args) do
-    Logger.info("Initializing new trader for symbol(#{args.symbol})")
-
-    tick_size = fetch_tick_size(args.symbol)
-
-    {:ok,
-     %State{
-       symbol: args.symbol,
-       profit_interval: args.profit_interval,
-       tick_size: tick_size
-     }}
+  def init(%State{} = state) do
+    {:ok, state}
   end
 
   def handle_cast(
@@ -41,7 +32,9 @@ defmodule Greek.Trader do
     {:ok, %Binance.OrderResponse{} = order} =
       Binance.order_limit_buy(symbol, quantity, price, "GTC")
 
-    {:noreply, %{state | buy_order: order}}
+    new_state = %{state | buy_order: order}
+    Greek.Leader.notify(:trader_state_updated, new_state)
+    {:noreply, new_state}
   end
 
   def handle_cast(
@@ -66,7 +59,9 @@ defmodule Greek.Trader do
     {:ok, %Binance.OrderResponse{} = order} =
       Binance.order_limit_sell(symbol, quantity, sell_price, "GTC")
 
-    {:noreply, %{state | sell_order: order}}
+    new_state = %{state | sell_order: order}
+    Greek.Leader.notify(:trader_state_updated, new_state)
+    {:noreply, new_state}
   end
 
   def handle_cast(
@@ -82,25 +77,13 @@ defmodule Greek.Trader do
           }
         } = state
       ) do
+    Logger.info("Trade finished, trader will now exit.")
+
     Process.exit(self(), :finished)
-    {:noreply, state}
+    {:stop, :trade_finished, state}
   end
 
   def handle_cast({:event, _}, state), do: {:noreply, state}
-
-  defp fetch_tick_size(symbol) do
-    %{"filters" => filters} =
-      Binance.get_exchange_info()
-      |> elem(1)
-      |> Map.get(:symbols)
-      |> Enum.find(&(&1["symbol"] == String.upcase(symbol)))
-
-    %{"tickSize" => tick_size} =
-      filters
-      |> Enum.find(&(&1["filterType"] == "PRICE_FILTER"))
-
-    tick_size
-  end
 
   defp calculate_sell_price(buy_price, profit_interval, tick_size) do
     fee = Decimal.cast("1.001")
