@@ -40,6 +40,10 @@ defmodule Streamer.Binance do
         "#{trade_event.symbol}@#{trade_event.price}"
     )
 
-    Greek.send_event(trade_event)
+    Phoenix.PubSub.broadcast(
+      Streamer.PubSub,
+      "trade:#{trade_event.symbol}",
+      trade_event
+    )
   end
 end
