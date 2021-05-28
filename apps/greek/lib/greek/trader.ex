@@ -20,13 +20,20 @@ defmodule Greek.Trader do
   end
 
   def init(%State{} = state) do
+    Phoenix.PubSub.subscribe(
+      Streamer.PubSub,
+      "trade:#{state.symbol}"
+    )
+
     {:ok, state}
   end
 
-  def handle_cast(
-        {:event, %Streamer.Binance.TradeEvent{price: price}},
+  def handle_info(
+        %Streamer.Binance.TradeEvent{price: price},
         %State{symbol: symbol, buy_order: nil} = state
       ) do
+    Logger.info("Placing buy order (#{symbol}@#{price})")
+
     quantity = 100
 
     {:ok, %Binance.OrderResponse{} = order} =
@@ -37,12 +44,11 @@ defmodule Greek.Trader do
     {:noreply, new_state}
   end
 
-  def handle_cast(
-        {:event,
-         %Streamer.Binance.TradeEvent{
-           buyer_order_id: order_id,
-           quantity: quantity
-         }},
+  def handle_info(
+        %Streamer.Binance.TradeEvent{
+          buyer_order_id: order_id,
+          quantity: quantity
+        },
         %State{
           symbol: symbol,
           buy_order: %Binance.OrderResponse{
@@ -64,12 +70,11 @@ defmodule Greek.Trader do
     {:noreply, new_state}
   end
 
-  def handle_cast(
-        {:event,
-         %Streamer.Binance.TradeEvent{
-           seller_order_id: order_id,
-           quantity: quantity
-         }},
+  def handle_info(
+        %Streamer.Binance.TradeEvent{
+          seller_order_id: order_id,
+          quantity: quantity
+        },
         %State{
           sell_order: %Binance.OrderResponse{
             order_id: order_id,
@@ -83,7 +88,7 @@ defmodule Greek.Trader do
     {:stop, :trade_finished, state}
   end
 
-  def handle_cast({:event, _}, state), do: {:noreply, state}
+  def handle_info(_, state), do: {:noreply, state}
 
   defp calculate_sell_price(buy_price, profit_interval, tick_size) do
     fee = Decimal.cast("1.001")
